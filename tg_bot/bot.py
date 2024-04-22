@@ -223,6 +223,7 @@ def callback_handlle(call):
                                           reply_markup=no_task_keyb)
 
             elif data[2] == 'all':
+                sessions[chat_id].set_last_cb('u;t;all')
                 print('yep')
                 if data[-2] == 'm':
                     page = int(data[-1])
@@ -532,6 +533,7 @@ def callback_handlle(call):
                                           reply_markup=show_keyb(sessions[chat_id].last_cb, task[0]))
                 # finish task
                 elif data[2] == 'fin' and data[-1] not in ['y', 'n']:
+                    sessions[chat_id].set_bot_message(call.message)
                     task = db.get_item('Tasks', int(data[3]))
                     if task:
                         task = task[0]
@@ -543,7 +545,7 @@ def callback_handlle(call):
                     if task[8] and not task[7]:
                         bot.edit_message_text(chat_id=chat_id,
                                               message_id=message_id,
-                                              text=text,
+                                              text=text + '\nУверены что хотите завершить эту задачу?',
                                               reply_markup=keybool(f'u;t;fin;{data[3]}'))
 
                     # if personal task
@@ -569,9 +571,9 @@ def callback_handlle(call):
                         if sessions[chat_id].last_cb[0] == 'p':
                             bot.edit_message_text(chat_id=chat_id,
                                                   message_id=message_id,
-                                                  text='задача завершена',
+                                                  text='Задача завершена',
                                                   reply_markup=slider(',',[], menu_callback_data='u;menu'))
-                        elif sessions[chat_id].last_cb != 'u;menu':
+                        elif sessions[chat_id].last_cb != 'u;menu' and sessions[chat_id].last_cb != 'u;t;all':
                             tasks = db.get_users_tasks(chat_id, sessions[chat_id].selected_date, condition=sessions[chat_id].last_cb.split(';')[4])
                             if tasks:
                                 text = f"Задачи на {sessions[chat_id].selected_date.strftime('%d.%m.%Y')}"
@@ -587,12 +589,29 @@ def callback_handlle(call):
                                                   message_id=message_id,
                                                   text=text + '\n',
                                                   reply_markup=keyb)
+                        elif sessions[chat_id].last_cb != 'u;t;all':
+                            tasks = db.get_users_tasks(chat_id)
+                            if tasks:
+                                text = f"Ваши задачи"
+                                tasks = [(i[1] + priority_to_emoji[i[5]], i[0]) for i in tasks]
+                                keyb = slider(f'{sessions[chat_id].last_cb}', tasks,
+                                              row_num=5,
+                                              itemprefix='u;t;show',
+                                              menu_callback_data='u;menu')
+                            else:
+                                text = f"У вас нет задач"
+                            bot.edit_message_text(chat_id=chat_id,
+                                                  message_id=message_id,
+                                                  text=text + '\n',
+                                                  reply_markup=keyb)
+
                         else:
                             # place where u get after finishing task in notification, and seems like this inly deletes task, no option for finish yet
                             if int(data[-2]) in reminders:
                                 reminders[int(data[-2])].is_send = True
                                 reminders_to_del.append(reminders[int(data[-2])].task_id)
                             bot.delete_message(chat_id, message_id)
+                            call_start(call,False)
                     # if task not finished, go back to it
                     else:
                         keyb = sessions[chat_id].bot_message.reply_markup

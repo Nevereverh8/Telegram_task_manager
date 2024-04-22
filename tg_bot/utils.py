@@ -206,9 +206,10 @@ def call_parse(call):  # chat_id, message_id, data, text, keyb = call_parse(call
 
 
 # for old button handle
-def call_start(call):
+def call_start(call, delete=True):
     chat_id, message_id, data, text, keyb = call_parse(call)
-    bot.delete_message(chat_id, message_id)
+    if delete:
+        bot.delete_message(chat_id, message_id)
     m = bot.send_message(chat_id,
                          'Здравствуйте, диспечтер задач к вашим услугам, чего желаете?',
                          reply_markup=main_menu_keyb)
