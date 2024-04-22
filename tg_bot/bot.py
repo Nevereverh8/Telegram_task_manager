@@ -8,11 +8,7 @@ from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from tg_bot.tg_keyboards import *
 from tg_bot.utils import *
 
-priority_to_emoji = {1: '🟢',
-                     2: '🟡',
-                     3: '🔴'}
-complition_to_emoji = {0: '',
-                       1: '✅'}
+
 ru_step = {'year': 'год',
            'month': 'месяц',
            'day': 'день'
@@ -34,7 +30,7 @@ def project_name_input(message):
         bot.edit_message_text(chat_id=message.chat.id,
                               message_id=bot_message.id,
                               text=f'У вас уже есть проект с таким именем, выберите другое имя')
-        bot.register_next_step_handler(message)
+        bot.register_next_step_handler(message, project_name_input)
     bot.delete_message(message.chat.id, message.id)
 
 
@@ -43,6 +39,22 @@ with open('config.json', 'r') as file:
     token = config["token"]
     bot_link = config["bot_link"]
 bot = telebot.TeleBot(token)
+
+@bot.channel_post_handler(func=lambda message: message.text.startswith('/connect'))
+def connect_channel_to_project(message):
+    if not db.get_item('Projects', message.chat.id, 'channel_id'):
+        if len(message.text.split('_')) == 3:
+            if message.text.split('_')[1].isdigit() and message.text.split('_')[2].isdigit():
+                proj_id = int(message.text.split('_')[1])
+                proj = db.get_item('Projects', proj_id)
+                if not proj[0][3] and int(message.text.split('_')[2]) == proj[0][2]:
+                    db.update_cell('Projects', proj_id, 'channel_id', message.chat.id)
+                    bot.send_message(message.chat.id,
+                                     f'Канал успешно подключен к проекту {proj[0][1]} \nСсылка для присоединения к проекту {bot_link}?start=join_{proj[0][0]} (пройти и нажать старт)')
+    bot.delete_message(message.chat.id,
+                       message.id)
+
+
 
 
 @bot.message_handler(commands=['start', 'help'])
@@ -63,6 +75,10 @@ def commands_handler(message):
         db.join_project(int(message.text.split('_')[1]), message.chat.id)
         bot.delete_message(chat_id,
                            message.id)
+        m = bot.send_message(chat_id,
+                             f"Вы успешно подключились к проекту {db.get_item('Projects', int(message.text.split('_')[1]))[0][1]}",
+                             reply_markup=slider('do-nothing', [], menu_callback_data='u;menu'))
+        sessions[chat_id].set_bot_message(m)
 
 
 # step2: calendars and time handlers
@@ -146,7 +162,7 @@ def cal3(call):
 # basic callback
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handlle(call):
-    global priority_to_emoji
+
     print(f'call data: {call.data} ---------time:{datetime.datetime.now()}')
     chat_id, message_id, data, text, keyb = call_parse(call)
     data = data.split(';')
@@ -169,7 +185,7 @@ def callback_handlle(call):
 
     elif not sessions[chat_id].bot_message:
         call_start(call)
-
+    print(sessions[chat_id].priority)
     # MESSAGE BOXES finished creating task or task
     if len(data) == 5:
         if data[3] == '5' and data[0] == 'u' and not sessions[chat_id].selected_project:
@@ -185,7 +201,7 @@ def callback_handlle(call):
     # user part
     if data[0] == 'u':
         if data[1] == 'menu':
-            sessions[chat_id].reset()
+            sessions[chat_id].reset_user()
             bot.edit_message_text(chat_id=chat_id,
                                   message_id=sessions[chat_id].bot_message.id,
                                   text='Здравствуйте, диспечтер задач к вашим услугам, чего желаете?',
@@ -242,6 +258,7 @@ def callback_handlle(call):
                         if data[4] == 's':
                             # start date
                             if data[5] == 'y':
+                                sessions[chat_id].set_last_cb('u;menu')
                                 sessions[chat_id].task_date_start = 0.0
                                 calendar1, step = DetailedTelegramCalendar(calendar_id=1,
                                                                            min_date=datetime.date.today(),
@@ -279,6 +296,7 @@ def callback_handlle(call):
                         elif data[4] == 'e':
                             # end date
                             if data[5] == 'y':
+                                sessions[chat_id].set_last_cb('u;menu')
                                 sessions[chat_id].task_date_end = 0.0
                                 calendar2, step = DetailedTelegramCalendar(calendar_id=2,
                                                                            min_date=datetime.date.today(),
@@ -377,27 +395,37 @@ def callback_handlle(call):
                         if data[4].isdigit():
                             sessions[chat_id].set_priority(int(data[4]))
                         if data[-1] == 'save':
-                            proj_participants = db.get_project_users(sessions[chat_id].selected_project)
-                            proj_name = db.get_item('Projects', sessions[chat_id].selected_project)[0][1]
-                            for user in proj_participants:
-                                if user[0] in sessions[chat_id].users_list:
-                                    task_id = db.create_task(user[1],
-                                                             sessions[chat_id].task_name,
-                                                             sessions[chat_id].task_cat,
-                                                             sessions[chat_id].task_date_start,
-                                                             sessions[chat_id].task_date_end,
-                                                             sessions[chat_id].priority,
-                                                             sessions[chat_id].start_remind,
-                                                             sessions[chat_id].end_remind,
-                                                             sessions[chat_id].repeat,
-                                                             sessions[chat_id].selected_project)
-                                    bot.send_message(chat_id=user[1],
-                                                     text=f'Вам назначена задача: \n'+gen_task_text(db.get_item('Tasks', task_id[0])[0]),
-                                                     reply_markup=notification_keyb(task_id, is_assignment=True))
-                            bot.edit_message_text(chat_id=chat_id,
-                                                  message_id=message_id,
-                                                  text='задача проекта поставлена')
-                            call_start(call)
+                            if sessions[chat_id].users_list:
+                                proj_participants = db.get_project_users(sessions[chat_id].selected_project)
+                                proj = db.get_item('Projects', sessions[chat_id].selected_project)[0]
+                                proj_name, proj_channel = proj[1], proj[3]
+                                for user in proj_participants:
+                                    if user[0] in sessions[chat_id].users_list:
+                                        task_id = db.create_task(user[1],
+                                                                 sessions[chat_id].task_name,
+                                                                 sessions[chat_id].task_cat,
+                                                                 sessions[chat_id].task_date_start,
+                                                                 sessions[chat_id].task_date_end,
+                                                                 sessions[chat_id].priority,
+                                                                 sessions[chat_id].start_remind,
+                                                                 sessions[chat_id].end_remind,
+                                                                 sessions[chat_id].repeat,
+                                                                 sessions[chat_id].selected_project)
+                                        bot.send_message(chat_id=user[1],
+                                                         text=f'Вам назначена задача: \n'+gen_task_text(db.get_item('Tasks', task_id[0])[0]),
+                                                         reply_markup=notification_keyb(task_id, is_assignment=True))
+                                if len(sessions[chat_id].users_list) > 1:
+                                    task = db.get_item('Tasks', task_id[0])
+                                    text = f'Задача: \n' + task[0][1]
+                                    if task[0][4]:
+                                        text += f"\nОкончание:\n{datetime.datetime.fromtimestamp(task[0][4])}')"
+                                    bot.send_message(
+                                        chat_id=db.get_item('Projects', sessions[chat_id].selected_project)[0][3],
+                                        text=text)
+                                bot.edit_message_text(chat_id=chat_id,
+                                                      message_id=message_id,
+                                                      text='задача проекта поставлена')
+                                call_start(call)
                         elif sessions[chat_id].selected_project:
                             if len(data) == 5:
                                 page = 0
@@ -408,7 +436,7 @@ def callback_handlle(call):
                             proj_participants = [(user[2] + f' {user[3]}'.replace('None', ''), user[0])for user in db.get_project_users(sessions[chat_id].selected_project)]
                             bot.edit_message_text(chat_id=chat_id,
                                                   message_id=message_id,
-                                                  text='Выберите людей ответственных за выполнение этой задачи\nОтветственные:\n'+'\n'.join(
+                                                  text='Выберите людей ответственных за выполнение этой задачи (это обязательно)\nОтветственные:\n'+'\n'.join(
                                                       [user[0] for user in proj_participants if user[1] in sessions[chat_id].users_list]),
                                                   reply_markup=slider(prefix='u;t;new;5',
                                                                       listy=proj_participants,
@@ -416,7 +444,7 @@ def callback_handlle(call):
                                                                       menu_callback_data='u;menu'))
                         else:
                             sessions[chat_id].save_task()
-                            sessions[chat_id].reset()
+                            sessions[chat_id].reset_user()
                             bot.edit_message_text(chat_id=chat_id,
                                                   message_id=message_id,
                                                   text='Здравствуйте, диспечтер задач к вашим услугам, чего желаете?',
@@ -687,7 +715,7 @@ def callback_handlle(call):
                                 if task[8]:
                                     proj = db.get_item('Projects', task[8])[0]
                                     if task[6] != proj[2]:
-                                        keyb = change_task_keyb(call.data)
+                                        keyb = change_task_keyb(';'.join(data[:4]))
 
                         elif data[4] == 'not_end':
                             if data[-1] == 'not_end':
@@ -707,7 +735,7 @@ def callback_handlle(call):
                                 if task[8]:
                                     proj = db.get_item('Projects', task[8])[0]
                                     if task[6] != proj[2]:
-                                        keyb = change_task_keyb(call.data)
+                                        keyb = change_task_keyb(';'.join(data[:4]))
                         elif data[4] == 'rep':
                             if data[-1] == 'rep':
                                 text = f'Выберите интервал повтора уведомлений'
@@ -726,7 +754,7 @@ def callback_handlle(call):
                                 if task[8]:
                                     proj = db.get_item('Projects', task[8])[0]
                                     if task[6] != proj[2]:
-                                        keyb = change_task_keyb(call.data)
+                                        keyb = change_task_keyb(';'.join(data[:4]))
 
                         bot.edit_message_text(text,
                                               chat_id,
@@ -746,7 +774,7 @@ def callback_handlle(call):
         if len(data) == 1:
             bot.edit_message_text(chat_id=chat_id,
                                   message_id=sessions[chat_id].bot_message.id,
-                                  text='Выберите что вы хотите сделать',
+                                  text='Выберите что вы хотите сделать или просмотреть',
                                   reply_markup=proj_keyb)
         elif len(data) == 2 or data[-1] == 'n' or data[2] == 'show' or data[-2] == 'm':
             if data[-2] == 'm':
@@ -777,14 +805,22 @@ def callback_handlle(call):
                 if data[-1] == 'tasks' or data[-2] == 'tasks' and data[-1] == 'm':
                     if data[1] == 'a':
                         tasks = db.get_project_tasks(int(data[3]), chat_id)
-                        print(tasks)
-                        text = f'Ваши задачи в рамках проекта {db.get_item("Projects", int(data[-2]))[0][1]}'  # to-do слайдер с задачами
-                        tasks = [(f'{complition_to_emoji[task[7]]}'+ task[1]+f'{priority_to_emoji[task[5]]}', task[0]) for task in tasks]
-                        keyb = slider(f'p;a;show;{data[3]};tasks', tasks, page, itemprefix=f'p;a;show;{data[3]};task', menu_callback_data='u;menu')
+                        if tasks:
+                            text = f'Ваши задачи в рамках проекта {db.get_item("Projects", int(data[-2]))[0][1]}'  # to-do слайдер с задачами
+
+                        else:
+                            text = f'У вас нет задач в рамках проекта {db.get_item("Projects", int(data[-2]))[0][1]}'
+                        tasks = [
+                            (f'{complition_to_emoji[task[7]]}' + task[1] + f'{priority_to_emoji[task[5]]}', task[0]) for task in tasks]
+                        keyb = slider(f'p;a;show;{data[3]};tasks', tasks, page, itemprefix=f'p;a;show;{data[3]};task',
+                                      menu_callback_data='u;menu')
                     elif data[1] == 'o':
                         tasks = db.get_project_tasks(int(data[3]))
                         print(tasks)
-                        text = f'Задачи проекта {db.get_item("Projects", int(data[-2]))[0][1]}'  # to-do слайдер с задачами
+                        if tasks:
+                            text = f'Задачи проекта {db.get_item("Projects", int(data[-2]))[0][1]}'  # to-do слайдер с задачами
+                        else:
+                            text = f'В проекте {db.get_item("Projects", int(data[-2]))[0][1]} пока что нет задач'
                         tasks = [(f'{complition_to_emoji[task[7]]}'+ db.get_item('Users', task[6])[0][2] + ': ' + task[1]+f'{priority_to_emoji[task[5]]}', task[0]) for task in tasks]
                         keyb = slider(f'p;o;show;{data[3]};tasks', tasks, page, itemprefix=f'p;o;show;{data[3]};task', menu_callback_data='u;menu')
                     sessions[chat_id].set_last_cb(call.data)
@@ -839,6 +875,11 @@ def callback_handlle(call):
                                   text=text,
                                   reply_markup=keyb)
         # elif len(data) == 3:
+        elif data[1] == 'connect':
+            user_id = db.get_item('Users', chat_id, 'chat_id')[0][0]
+            text = f'Чтобы привязать канал к проекту, пригласите этого бота ({bot.get_my_name().name}) в канал который вы создали, и ❗внутри канала❗ отправьте следующую команду: \n/connect_{data[-1]}_{user_id}'
+            keyb = slider('do-nothing', [], menu_callback_data='u;menu')
+            bot.edit_message_text(text, chat_id,sessions[chat_id].bot_message.id, reply_markup=keyb)
         elif data[1] == 'new':
             if len(data) == 2:
                 bot.edit_message_text(message_id=sessions[chat_id].bot_message.id,

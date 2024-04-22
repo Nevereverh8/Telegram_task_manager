@@ -76,7 +76,7 @@ def priority_keyb(prefix):
     keyb = InlineKeyboardMarkup()
     keyb.add(InlineKeyboardButton('Высокий 🔴', callback_data=f'{prefix};3'))
     keyb.add(InlineKeyboardButton('Средний 🟡', callback_data=f'{prefix};2'))
-    keyb.add(InlineKeyboardButton('Низкий 🟢', callback_data=f'{prefix};1 '))
+    keyb.add(InlineKeyboardButton('Низкий 🟢', callback_data=f'{prefix};1'))
     return keyb
 
 
@@ -180,9 +180,9 @@ def slider(prefix, listy, page=0, row_num=5, itemprefix='', menu_callback_data =
         elif page != 0:
             keyb.add(InlineKeyboardButton("Назад", callback_data=f'{prefix};m;{str(page - 1)}'),
                      InlineKeyboardButton("Вперед", callback_data=f'{prefix};m;{str(page + 1)}'))
-    keyb.add(InlineKeyboardButton("Меню", callback_data=menu_callback_data))
     if prefix == 'u;t;new;5':
         keyb.add(InlineKeyboardButton('Создать задачу внутри проекта и уведомить ответственных', callback_data=prefix+';save'))
+    keyb.add(InlineKeyboardButton("Меню", callback_data=menu_callback_data))
     return keyb
 
 
@@ -215,9 +215,11 @@ proj_keyb.add(InlineKeyboardButton("Меню", callback_data='u;menu'))
 
 def show_proj_keyb(prefix, is_owned):
     keyb = InlineKeyboardMarkup()
-    if db.get_project_tasks(int(prefix.split(';')[-1])):
-        keyb.add(InlineKeyboardButton("Просмотреть задачи", callback_data=prefix+';tasks'))
+    #if db.get_project_tasks(int(prefix.split(';')[-1])):
+    keyb.add(InlineKeyboardButton("Просмотреть задачи", callback_data=prefix+';tasks'))
     if is_owned:
+        if not db.get_item('Projects', int(prefix.split(';')[-1]))[0][3]:
+            keyb.add(InlineKeyboardButton('Привязать телеграм канал к проекту', callback_data=f"p;connect;{prefix.split(';')[-1]}"))
         keyb.add(InlineKeyboardButton('Добавить задачу', callback_data='u;t;new;0r'))
         keyb.add(InlineKeyboardButton('Удилить проект', callback_data=prefix+';del'))
     keyb.add(InlineKeyboardButton("Меню", callback_data='u;menu'))

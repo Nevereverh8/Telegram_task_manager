@@ -168,6 +168,8 @@ class DataBase:
                     and self.get_item('Projects', project_id):
                 insert = (f'''INSERT INTO Users_lists (user_id, project_id) VALUES (?, ?)''')
                 con.execute(insert, [user_id, project_id])
+            else:
+                return 'Такого проекта не существует'
 
     def del_project(self, proj_id):
         with self.db as con:

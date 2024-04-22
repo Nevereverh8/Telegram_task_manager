@@ -11,6 +11,11 @@ with open('config.json', 'r') as file:
     token = config["token"]
 bot = telebot.TeleBot(token)
 
+priority_to_emoji = {1: '🟢',
+                     2: '🟡',
+                     3: '🔴'}
+complition_to_emoji = {0: '',
+                       1: '✅'}
 
 # classes
 class User:
@@ -33,7 +38,7 @@ class User:
         self.selected_project = 0
         self.users_list = []
 
-    def reset(self):
+    def reset_user(self):
         self.task_name = ''
         self.task_cat = ''
         self.task_date_start = 0.0
@@ -159,8 +164,8 @@ def task_name_input(message):
                               message_id=bot_message.id,
                               text=f'Вы выбрали имя для задачи\n{message.text}',
                               reply_markup=step_keyb('u;menu',
-                                                     f'{sessions[message.chat.id].last_cb}',
-                                                     f'{sessions[message.chat.id].last_cb};y'))
+                                                     'u;t;new;0r',
+                                                     'u;t;new;1'))
         sessions[message.chat.id].set_task_name(message.text)
 
     bot.delete_message(message.chat.id, message.id)
@@ -175,7 +180,7 @@ def gen_task_text(task):
     text += f'Задача: {task[1]} \n'
     if task[8]:
         user = db.get_item("Users", task[6])[0]
-        text += f'\nПользователя: {user[2]} '
+        text += f'\nПользователь: {user[2]} '
         if user[3]:
             text += user[3]
     text += f"\nКатегория: {db.get_item('Categories', task[2])[0][1]} \n"
@@ -183,7 +188,7 @@ def gen_task_text(task):
         text += f'Начало: {datetime.datetime.fromtimestamp(task[3])} \n'
     if task[4]:
         text += f'Конец: {datetime.datetime.fromtimestamp(task[4])} \n'
-    text += f'Уровень приоритета: {task[5]} \n'
+    text += f'Уровень приоритета: {priority_to_emoji[task[5]]} \n'
     if task[8]:
         text += f"Проект: {db.get_item('Projects',task[8])[0][1]} \n"
     if task[9]:
@@ -211,7 +216,7 @@ def call_start(call):
         sessions[chat_id] = User(chat_id, m, call.from_user.first_name, call.from_user.last_name)
         sessions[chat_id].set_bot_message(m)
     else:
-        sessions[chat_id].reset()
+        sessions[chat_id].reset_user()
         sessions[chat_id].set_bot_message(m)
 
 
