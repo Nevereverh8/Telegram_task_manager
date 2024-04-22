@@ -4,7 +4,6 @@ from database.db_requests import sessions
 import telebot
 import json
 from tg_bot.tg_keyboards import *
-from pytz import timezone
 import csv
 
 with open('config.json', 'r') as file:
