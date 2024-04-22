@@ -185,7 +185,6 @@ def callback_handlle(call):
 
     elif not sessions[chat_id].bot_message:
         call_start(call)
-    print(sessions[chat_id].priority)
     # MESSAGE BOXES finished creating task or task
     if len(data) == 5:
         if data[3] == '5' and data[0] == 'u' and not sessions[chat_id].selected_project:
@@ -223,6 +222,25 @@ def callback_handlle(call):
                                           text='На данный момент у вас нет ни одной задачи, хотите создать задачу?',
                                           reply_markup=no_task_keyb)
 
+            elif data[2] == 'all':
+                print('yep')
+                if data[-2] == 'm':
+                    page = int(data[-1])
+                else:
+                    page = 0
+                tasks = db.get_users_tasks(chat_id, sessions[chat_id].selected_date)
+                if tasks:
+                    text = f"Ваши задачи "
+                    tasks = [(i[1] + priority_to_emoji[i[5]], i[0]) for i in tasks]
+                else:
+                    text = f"У вас нет задач"
+                sessions[chat_id].set_last_cb(f'u;t;{data[2]}')
+                bot.edit_message_text(chat_id=chat_id,
+                                      message_id=message_id,
+                                      text=text + '\n',
+                                      reply_markup=slider(f'u;t;{data[2]}', tasks, page, row_num=5,
+                                                          itemprefix='u;t;show',
+                                                          menu_callback_data='u;menu'))
             else:
                 # new task
                 if data[2] == 'new':
@@ -473,7 +491,7 @@ def callback_handlle(call):
                                               text='Какие задачи хотите просмотреть?',
                                               reply_markup=task_types_keyb(f'u;t;date;{data[3]}'))
                     # show tasks that starts/ends/active on date
-                    elif len(data) == 5 or data[-2] == 'm':       # slider start and move between pages   #!!!!!!!!!!!!!!!!!!! test slider
+                    elif len(data) == 5 or len(data)>5 and data[-2] == 'm':       # slider start and move between pages   #!!!!!!!!!!!!!!!!!!! test slider
                         if data[-2] == 'm':
                             page = int(data[-1])
                         else:
@@ -491,7 +509,6 @@ def callback_handlle(call):
                             else:
                                 text = f"Задачи на {sessions[chat_id].selected_date.strftime('%d.%m.%Y')}"
                             tasks = [(i[1]+priority_to_emoji[i[5]], i[0]) for i in tasks]
-                            print(tasks)
                         else:
                             if sessions[chat_id].selected_date == 'week':
                                 text = f"У вас нет задач на ближайшие 7 дней по данному условию"
@@ -555,7 +572,6 @@ def callback_handlle(call):
                                                   text='задача завершена',
                                                   reply_markup=slider(',',[], menu_callback_data='u;menu'))
                         elif sessions[chat_id].last_cb != 'u;menu':
-                            print(sessions[chat_id].last_cb)
                             tasks = db.get_users_tasks(chat_id, sessions[chat_id].selected_date, condition=sessions[chat_id].last_cb.split(';')[4])
                             if tasks:
                                 text = f"Задачи на {sessions[chat_id].selected_date.strftime('%d.%m.%Y')}"
@@ -763,6 +779,7 @@ def callback_handlle(call):
                     else:
                         call_start(call)
                         return
+
         elif data[1] == 'export':
             file_name = export(chat_id)
             with open(file_name, 'r', encoding='utf_8') as file:
@@ -816,7 +833,6 @@ def callback_handlle(call):
                                       menu_callback_data='u;menu')
                     elif data[1] == 'o':
                         tasks = db.get_project_tasks(int(data[3]))
-                        print(tasks)
                         if tasks:
                             text = f'Задачи проекта {db.get_item("Projects", int(data[-2]))[0][1]}'  # to-do слайдер с задачами
                         else:
